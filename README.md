@@ -81,34 +81,106 @@ npm run dev                # http://localhost:5173
 | `CLONE_DIR` | `./repo_cache` | |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated |
 
-## Deployed setup (Gemini + Render + Vercel)
+## Deployment (Gemini + Render + Vercel)
 
-### Backend → Render (free web service)
+There is a chicken-and-egg between the two services: the backend needs the frontend's
+origin for CORS, and the frontend needs the backend's URL. Deploy the backend first with
+a placeholder, then come back and fix it in step 5.
 
-`render.yaml` at the repo root defines the service (Docker runtime, `rootDir: backend`,
-health check on `/health`). Either commit it and use Render's Blueprint flow, or create a
-web service manually with: runtime Docker, root directory `backend`, and the env vars below.
+### 1. Get a Gemini API key
 
-Set in the Render dashboard (both are `sync: false` in `render.yaml`):
+Create one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Check it
+works before deploying — see the model-availability note under [Notes](#notes) if you get
+a 404:
 
-- `GEMINI_API_KEY` — your Google AI Studio key
-- `CORS_ORIGINS` — your Vercel origin, e.g. `https://your-app.vercel.app`
+```bash
+curl -s -X POST \
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent" \
+  -H "x-goog-api-key: $GEMINI_API_KEY" -H "Content-Type: application/json" \
+  -d '{"contents":[{"parts":[{"text":"Say READY"}]}]}'
+```
 
-Already set by `render.yaml`: `LLM_PROVIDER=gemini`, `GEMINI_MODEL=gemini-2.5-flash`,
-`EMBEDDING_MODEL`, `TOP_K`, and `CHROMA_DIR`/`CLONE_DIR` pointed at `/tmp`.
+### 2. Deploy the backend to Render
 
-### Frontend → Vercel
+`render.yaml` defines the service (Docker runtime, `rootDir: backend`, health check on
+`/health`). Either use Render's **Blueprint** flow (New → Blueprint → pick this repo,
+which reads `render.yaml`), or create a web service manually with runtime **Docker**,
+root directory **`backend`**, and the env vars below.
 
-Import the repo, set the root directory to `frontend` (Vercel detects Vite), and set:
+Two values are `sync: false` in `render.yaml` and must be set in the dashboard:
 
-- `VITE_API_URL` — your Render URL, e.g. `https://codebase-assist-api.onrender.com`
+| Var | Value |
+| --- | --- |
+| `GEMINI_API_KEY` | your key from step 1 |
+| `CORS_ORIGINS` | `https://placeholder.vercel.app` for now — corrected in step 5 |
+
+Everything else (`LLM_PROVIDER=gemini`, `GEMINI_MODEL`, `EMBEDDING_MODEL`, `TOP_K`, and
+`CHROMA_DIR`/`CLONE_DIR` pointed at `/tmp`) comes from `render.yaml`.
+
+The first build takes roughly 5–10 minutes — it installs CPU-only torch and bakes the
+embedding model into the image so cold starts don't re-download it.
+
+### 3. Verify the backend
+
+```bash
+curl https://<your-service>.onrender.com/health
+# {"status":"ok","llm_provider":"gemini"}
+```
+
+If this 404s, the service is still building. If it hangs ~50s then responds, that's a
+cold start, not a fault.
+
+### 4. Deploy the frontend to Vercel
+
+Import the repo, set **Root Directory** to `frontend` (Vercel auto-detects Vite; no
+`vercel.json` needed), and set one env var:
+
+| Var | Value |
+| --- | --- |
+| `VITE_API_URL` | `https://<your-service>.onrender.com` — no trailing slash |
+
+### 5. Close the CORS loop
+
+Go back to Render, set `CORS_ORIGINS` to your real Vercel origin
+(`https://<your-app>.vercel.app`, no trailing slash, no path), and let it redeploy.
+
+**This is the step people miss.** Skip it and the app loads fine but every request fails
+with a CORS error in the browser console while `curl` still works — because `curl` doesn't
+send an `Origin` header. Verify the preflight from the terminal:
+
+```bash
+curl -s -o /dev/null -D - -X OPTIONS \
+  https://<your-service>.onrender.com/query \
+  -H "Origin: https://<your-app>.vercel.app" \
+  -H "Access-Control-Request-Method: POST" | grep -i access-control-allow-origin
+# access-control-allow-origin: https://<your-app>.vercel.app
+```
+
+No header in the output means `CORS_ORIGINS` doesn't match your origin exactly.
+
+### 6. Smoke-test end to end
+
+Open the Vercel URL, ingest a small repo, and ask a question. Start small —
+`psf/requests` indexes 36 files / 281 chunks in about 20s locally and takes longer on
+0.1 CPU.
 
 ### Free-tier caveats
 
-The Render free tier gives 512MB RAM / 0.1 CPU and sleeps after 15 minutes idle, so the
-first request after a sleep is slow. Chroma writes to the container's ephemeral disk —
-**index data is lost on redeploy or sleep, so re-ingest the repo when that happens.**
-This is intentional for v1; no hosted vector DB or volume mounting.
+**Memory is the real constraint.** Measured peak is ~418MB against the 512MB cap, with
+~94MB of headroom. That overhead is nearly all fixed — torch plus the model weights —
+not proportional to index size (100 vs 400 chunks differed by ~9MB in testing), so large
+repos cost ingest *time*, not much extra memory. If you hit OOM restarts, the culprit is
+usually a raised `TOP_K` or a second worker process; keep uvicorn at one worker.
+
+**Cold starts.** The service sleeps after 15 minutes idle and takes ~50s to wake. The
+first request after a deploy also pays a one-time embedding-model load of a few seconds.
+
+**Data is ephemeral.** Chroma writes to the container's disk, so the index is lost on
+redeploy and on sleep — **re-ingest the repo when that happens.** Intentional for v1; no
+hosted vector DB or volume mounting.
+
+**Ingest is synchronous.** A very large repo can exceed Render's request timeout. Stick
+to small and mid-sized repos on the free tier.
 
 ## API
 
