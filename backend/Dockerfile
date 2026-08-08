@@ -7,11 +7,17 @@ RUN apt-get update \
 
 WORKDIR /app
 
-# CPU-only torch keeps the image well under the free-tier limits
+# CPU-only torch keeps the image well under the free-tier limits.
+# Thread limits matter more than they look: torch sizes per-thread scratch
+# buffers to the host's core count, which cost ~50MB of RSS on a machine that
+# only gets 0.1 CPU anyway. Pinning to 1 buys back headroom under the 512MB cap.
 ENV PIP_NO_CACHE_DIR=1 \
     PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu \
     PYTHONUNBUFFERED=1 \
-    HF_HOME=/app/.hf_cache
+    HF_HOME=/app/.hf_cache \
+    OMP_NUM_THREADS=1 \
+    MKL_NUM_THREADS=1 \
+    TOKENIZERS_PARALLELISM=false
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
