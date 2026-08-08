@@ -1,229 +1,152 @@
-# Codebase RAG Assistant
+# Codebase Assist — Workspace Overview
 
-Chat with a GitHub repo. Point it at a Python repository; it clones the repo, chunks
-the code structurally with tree-sitter (function/class granularity, not fixed-size text
-splitting), embeds the chunks locally, and answers questions with `file:line` citations.
+A RAG (retrieval-augmented generation) chat app for exploring a GitHub Python
+repository. Point it at a repo URL; it clones the repo, chunks the code at
+function/class granularity with tree-sitter, embeds the chunks locally, and
+answers natural-language questions with `file:line` citations back to the
+source.
 
-**Scope (v1):** Python repos only. Chroma on local disk. Embeddings always run in-process
-via sentence-transformers. Answer synthesis switches between local Ollama and Gemini.
+**Scope (v1):** Python repositories only. One repo indexed at a time (a new
+ingest replaces the old index). Embeddings always run locally via
+sentence-transformers; answer synthesis switches between local Ollama and
+Gemini depending on `LLM_PROVIDER`.
 
-## Structure
+## Architecture at a glance
+
+```
+GitHub repo URL
+      │  POST /ingest
+      ▼
+ ingest.py     shallow git clone, walk *.py files (skips venvs/build dirs, >512KB files)
+      │
+      ▼
+ chunker.py    tree-sitter parse → one Chunk per top-level function/class;
+               leftover top-level code grouped into "<module>" runs;
+               unparseable files fall back to one whole-file chunk
+      │
+      ▼
+ store.py      embed each chunk (sentence-transformers, all-MiniLM-L6-v2)
+               and upsert into a local persistent Chroma collection
+
+ --- separately, per question ---
+
+GET question
+      │  POST /query
+      ▼
+ store.search()   embed the question, cosine-similarity top_k against Chroma
+      ▼
+ query.py         build a bounded-size prompt from the retrieved chunks
+      ▼
+ llm/*            get_llm_client() picks Ollama or Gemini via LLM_PROVIDER
+      ▼
+ answer + citations (file_path, name, kind, start_line, end_line) returned to the frontend
+```
+
+## Repository layout
 
 ```
 backend/
   app/
-    main.py         FastAPI app — /ingest, /query, /health
-    config.py       env-driven config
-    models.py       request/response schemas
-    ingest.py       shallow clone + .py file walk
-    chunker.py      tree-sitter function/class chunking
-    store.py        sentence-transformers embeddings + Chroma
-    query.py        retrieval, prompt building, answer + citations
+    main.py         FastAPI app — POST /ingest, POST /query, GET /health
+    config.py       env-driven configuration (no hardcoded secrets)
+    models.py       Pydantic request/response schemas
+    ingest.py       GitHub URL parsing, shallow clone, .py file walk
+    chunker.py      tree-sitter structural chunking (functions/classes/module)
+    store.py        sentence-transformers embeddings + Chroma persistence
+    query.py        prompt assembly + answer/citation synthesis
     llm/
-      __init__.py   get_llm_client() — the only LLM_PROVIDER branch
-      base.py       LLMClient interface
-      ollama_client.py
-      gemini_client.py
+      __init__.py       get_llm_client() — the single LLM_PROVIDER branch point
+      base.py           LLMClient interface
+      ollama_client.py  local Ollama chat completion
+      gemini_client.py  Gemini API chat completion
   requirements.txt
   Dockerfile
   .env.example
 frontend/
   src/
-    App.jsx
-    api.js          calls /ingest and /query
-    components/     RepoInput, Chat, Citations
+    App.jsx             top-level layout: RepoInput + Chat
+    api.js               fetch wrappers for /ingest and /query
+    components/
+      RepoInput.jsx       repo URL form, triggers ingest
+      Chat.jsx            question input + message list
+      Citations.jsx       renders file:line citation chips
+    styles.css
   package.json
+  vite.config.js
   .env.example
-render.yaml
+render.yaml           Render Blueprint: Docker backend, health check on /health
+README.md             full setup/deploy instructions (this file summarizes it)
 ```
 
-## Local setup (Ollama)
+## Backend design notes
 
-Backend:
+- **Chunking** (`chunker.py`): each top-level `function_definition` /
+  `class_definition` becomes its own chunk, decorators included in the line
+  span; methods stay nested inside their class chunk rather than being
+  indexed separately. Non-def top-level code (imports, constants, `__main__`
+  guards) is grouped into contiguous `<module>` chunks so every chunk's
+  `start_line`–`end_line` is honest. Files that fail to parse fall back to a
+  single whole-file chunk.
+- **Embedding text** (`store.py`): each chunk is embedded as
+  `path :: kind name\n\n<code>` so symbol-name questions match as well as
+  behavioral questions.
+- **Retrieval** (`store.py`/`query.py`): cosine distance over Chroma;
+  `TOP_K` chunks go to the LLM and *all* of them come back as citations.
+  Prompt size is capped (`MAX_CONTEXT_CHARS`) so a large `top_k` can't blow
+  past model context limits.
+- **LLM provider switch** (`llm/__init__.py`): the only place in the codebase
+  that branches on `LLM_PROVIDER`; each concrete client implements a common
+  `LLMClient.complete()` interface.
+- **Safety/limits**: `ingest.py` skips `.git`, virtualenvs, `node_modules`,
+  caches, and build dirs, and skips any file over 512KB; GitHub URLs are
+  validated against a strict `owner/repo` pattern before shelling out to
+  `git clone --depth 1`.
 
-```bash
-cd backend
-python -m venv .venv && .venv/Scripts/activate   # macOS/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env                              # defaults are already set for Ollama
-uvicorn app.main:app --reload --port 8000
-```
-
-You also need Ollama running with a model pulled:
-
-```bash
-ollama pull llama3.1        # or any chat model you already have
-```
-
-To use a model other than the default, set `OLLAMA_MODEL` in `backend/.env` —
-e.g. `OLLAMA_MODEL=gemma3:12b`. `ollama list` shows what's installed locally.
-
-Frontend:
-
-```bash
-cd frontend
-npm install
-cp .env.example .env       # VITE_API_URL=http://localhost:8000
-npm run dev                # http://localhost:5173
-```
-
-### Local env vars
+## Configuration (env vars)
 
 | Var | Default | Notes |
 | --- | --- | --- |
 | `LLM_PROVIDER` | `ollama` | `ollama` or `gemini` |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | |
 | `OLLAMA_MODEL` | `llama3.1` | any model from `ollama list` |
+| `GEMINI_API_KEY` | — | required when `LLM_PROVIDER=gemini` |
+| `GEMINI_MODEL` | `gemini-3.5-flash` | `gemini-2.5-flash*` 404s for newer API keys |
 | `EMBEDDING_MODEL` | `all-MiniLM-L6-v2` | always local, both modes |
-| `CHROMA_DIR` | `./chroma_data` | |
+| `CHROMA_DIR` | `./chroma_data` | on-disk vector store path |
 | `CHROMA_COLLECTION` | `code_chunks` | |
 | `TOP_K` | `8` | chunks retrieved per query |
 | `CLONE_DIR` | `./repo_cache` | |
 | `CORS_ORIGINS` | `http://localhost:5173` | comma-separated |
 
-## Deployment (Gemini + Render + Vercel)
+## API surface
 
-There is a chicken-and-egg between the two services: the backend needs the frontend's
-origin for CORS, and the frontend needs the backend's URL. Deploy the backend first with
-a placeholder, then come back and fix it in step 5.
+- `POST /ingest` — `{ "repo_url": "https://github.com/owner/repo" }` →
+  `{ "repo", "files_indexed", "chunks_indexed" }`
+- `POST /query` — `{ "question": "...", "top_k": 8 }` →
+  `{ "answer", "citations": [{ file_path, name, kind, start_line, end_line }] }`
+- `GET /health` — `{ "status": "ok", "llm_provider": "ollama" | "gemini" }`
 
-### 1. Get a Gemini API key
-
-Create one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey). Check it
-works before deploying — see the model-availability note under [Notes](#notes) if you get
-a 404:
+## Running locally
 
 ```bash
-curl -s -X POST \
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent" \
-  -H "x-goog-api-key: $GEMINI_API_KEY" -H "Content-Type: application/json" \
-  -d '{"contents":[{"parts":[{"text":"Say READY"}]}]}'
+# backend
+cd backend
+python -m venv .venv && .venv/Scripts/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --port 8000
+ollama pull llama3.1   # or set OLLAMA_MODEL to something already pulled
+
+# frontend
+cd frontend
+npm install
+cp .env.example .env   # VITE_API_URL=http://localhost:8000
+npm run dev             # http://localhost:5173
 ```
 
-### 2. Deploy the backend to Render
+## Verified behavior
 
-`render.yaml` defines the service (Docker runtime, `rootDir: backend`, health check on
-`/health`). Either use Render's **Blueprint** flow (New → Blueprint → pick this repo,
-which reads `render.yaml`), or create a web service manually with runtime **Docker**,
-root directory **`backend`**, and the env vars below.
-
-Two values are `sync: false` in `render.yaml` and must be set in the dashboard:
-
-| Var | Value |
-| --- | --- |
-| `GEMINI_API_KEY` | your key from step 1 |
-| `CORS_ORIGINS` | `https://placeholder.vercel.app` for now — corrected in step 5 |
-
-Everything else (`LLM_PROVIDER=gemini`, `GEMINI_MODEL`, `EMBEDDING_MODEL`, `TOP_K`, and
-`CHROMA_DIR`/`CLONE_DIR` pointed at `/tmp`) comes from `render.yaml`.
-
-The first build takes roughly 5–10 minutes — it installs CPU-only torch and bakes the
-embedding model into the image so cold starts don't re-download it.
-
-### 3. Verify the backend
-
-```bash
-curl https://<your-service>.onrender.com/health
-# {"status":"ok","llm_provider":"gemini"}
-```
-
-If this 404s, the service is still building. If it hangs ~50s then responds, that's a
-cold start, not a fault.
-
-### 4. Deploy the frontend to Vercel
-
-Import the repo, set **Root Directory** to `frontend` (Vercel auto-detects Vite; no
-`vercel.json` needed), and set one env var:
-
-| Var | Value |
-| --- | --- |
-| `VITE_API_URL` | `https://<your-service>.onrender.com` — no trailing slash |
-
-### 5. Close the CORS loop
-
-Go back to Render, set `CORS_ORIGINS` to your real Vercel origin
-(`https://<your-app>.vercel.app`, no trailing slash, no path), and let it redeploy.
-
-**This is the step people miss.** Skip it and the app loads fine but every request fails
-with a CORS error in the browser console while `curl` still works — because `curl` doesn't
-send an `Origin` header. Verify the preflight from the terminal:
-
-```bash
-curl -s -o /dev/null -D - -X OPTIONS \
-  https://<your-service>.onrender.com/query \
-  -H "Origin: https://<your-app>.vercel.app" \
-  -H "Access-Control-Request-Method: POST" | grep -i access-control-allow-origin
-# access-control-allow-origin: https://<your-app>.vercel.app
-```
-
-No header in the output means `CORS_ORIGINS` doesn't match your origin exactly.
-
-### 6. Smoke-test end to end
-
-Open the Vercel URL, ingest a small repo, and ask a question. Start small —
-`psf/requests` indexes 36 files / 281 chunks in about 20s locally and takes longer on
-0.1 CPU.
-
-### Free-tier caveats
-
-**Memory is the real constraint.** Measured peak is ~418MB against the 512MB cap, with
-~94MB of headroom. That overhead is nearly all fixed — torch plus the model weights —
-not proportional to index size (100 vs 400 chunks differed by ~9MB in testing), so large
-repos cost ingest *time*, not much extra memory. If you hit OOM restarts, the culprit is
-usually a raised `TOP_K` or a second worker process; keep uvicorn at one worker.
-
-**Cold starts.** The service sleeps after 15 minutes idle and takes ~50s to wake. The
-first request after a deploy also pays a one-time embedding-model load of a few seconds.
-
-**Data is ephemeral.** Chroma writes to the container's disk, so the index is lost on
-redeploy and on sleep — **re-ingest the repo when that happens.** Intentional for v1; no
-hosted vector DB or volume mounting.
-
-**Ingest is synchronous.** A very large repo can exceed Render's request timeout. Stick
-to small and mid-sized repos on the free tier.
-
-## API
-
-`POST /ingest` — `{ "repo_url": "https://github.com/owner/repo" }` →
-`{ "repo": "owner/repo", "files_indexed": 42, "chunks_indexed": 310 }`
-
-`POST /query` — `{ "question": "How does auth work?", "top_k": 8 }` →
-`{ "answer": "...", "citations": [{ "file_path": "...", "name": "...", "kind": "function", "start_line": 10, "end_line": 42 }] }`
-
-`GET /health` — `{ "status": "ok", "llm_provider": "ollama" }`
-
-## How chunking works
-
-`chunker.py` parses each file with tree-sitter and emits one chunk per top-level
-function and class, with decorators included in the line span. Methods stay inside
-their class rather than being indexed twice. Leftover top-level code (imports,
-constants, `if __name__ == "__main__"` blocks) is grouped into `<module>` chunks,
-split into contiguous runs so every chunk's `start_line`–`end_line` honestly covers
-its own content. Files that fail to parse fall back to a single whole-file chunk.
-
-Each chunk is embedded as `path :: kind name` plus the code body, so questions
-phrased in terms of symbol names match as well as questions about behavior.
-
-## Notes
-
-- `/ingest` indexes one repo at a time — ingesting a new repo resets the collection.
-- Retrieval uses cosine distance; `TOP_K` chunks are passed to the LLM, and every
-  retrieved chunk is returned as a citation.
-- Files over 512KB are skipped as likely generated or vendored.
-- **Gemini model availability:** `gemini-2.5-flash` (and `-flash-lite`) return 404
-  for API keys created after their cutoff — "no longer available to new users".
-  The default is `gemini-3.5-flash`. If you hit a 404 naming the model, list what
-  your key can actually call:
-  ```bash
-  curl -s -H "x-goog-api-key: $GEMINI_API_KEY" \
-    https://generativelanguage.googleapis.com/v1beta/models
-  ```
-  Note the listing includes models your key may still be refused for — test before
-  relying on one.
-
-## Verified
-
-Both providers were exercised end to end against real repositories:
+Both LLM providers were exercised end-to-end:
 
 | | Ollama (`gemma3:12b`) | Gemini (`gemini-3.5-flash`) |
 | --- | --- | --- |
@@ -232,7 +155,7 @@ Both providers were exercised end to end against real repositories:
 | Query latency | 15–19s | 4–9s |
 | Citations resolving to real definitions | 8/8 | 16/16 |
 
-Retrieval ranked `class Response` first for *"what class represents an HTTP
-response"* and `class SessionRedirectMixin` first for *"how does this library
-handle redirects"*. Where the retrieved context genuinely lacked the answer, the
-model said so rather than inventing one.
+Retrieval correctly ranked `class Response` first for *"what class
+represents an HTTP response"* and `class SessionRedirectMixin` first for
+*"how does this library handle redirects."* Where retrieved context
+genuinely lacked the answer, the model said so instead of guessing.
