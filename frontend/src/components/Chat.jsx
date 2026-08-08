@@ -3,10 +3,10 @@ import { askQuestion } from "../api.js";
 import Citations from "./Citations.jsx";
 
 const SAMPLE_QUESTIONS = [
-  "what does this project do?",
-  "how is the code organized?",
-  "where is the main entry point?",
-  "are there any tests, and what do they cover?",
+  "what does this module implement?",
+  "what are the main classes and functions defined here?",
+  "what imports and dependencies does this code use?",
+  "explain a key function in this codebase.",
 ];
 
 export default function Chat({ repo }) {
@@ -50,6 +50,20 @@ export default function Chat({ repo }) {
         {pending && <p className="hint">Thinking…</p>}
       </div>
 
+      <form onSubmit={handleSubmit}>
+        <input
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder={
+            repo ? `Ask about ${repo}…` : "Ingest a repo first, then ask a question"
+          }
+          disabled={pending}
+        />
+        <button type="submit" disabled={pending || !question.trim()}>
+          Send
+        </button>
+      </form>
+
       {repo && (
         <div className="samples">
           <span className="samples-label">Try a sample question:</span>
@@ -68,20 +82,6 @@ export default function Chat({ repo }) {
           </div>
         </div>
       )}
-
-      <form onSubmit={handleSubmit}>
-        <input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder={
-            repo ? `Ask about ${repo}…` : "Ingest a repo first, then ask a question"
-          }
-          disabled={pending}
-        />
-        <button type="submit" disabled={pending || !question.trim()}>
-          Send
-        </button>
-      </form>
     </div>
   );
 }
