@@ -2,15 +2,20 @@ import { useState } from "react";
 import { askQuestion } from "../api.js";
 import Citations from "./Citations.jsx";
 
+const SAMPLE_QUESTIONS = [
+  "what does this project do?",
+  "how is the code organized?",
+  "where is the main entry point?",
+  "are there any tests, and what do they cover?",
+];
+
 export default function Chat({ repo }) {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
 
-  async function handleSubmit(event) {
-    event.preventDefault();
-    const text = question.trim();
-    if (!text || pending) return;
+  async function ask(text) {
+    if (!text.trim() || pending) return;
 
     setMessages((prev) => [...prev, { role: "user", text }]);
     setQuestion("");
@@ -28,6 +33,11 @@ export default function Chat({ repo }) {
     }
   }
 
+  function handleSubmit(event) {
+    event.preventDefault();
+    ask(question);
+  }
+
   return (
     <div className="chat">
       <div className="messages">
@@ -39,6 +49,26 @@ export default function Chat({ repo }) {
         ))}
         {pending && <p className="hint">Thinking…</p>}
       </div>
+
+      {repo && (
+        <div className="samples">
+          <span className="samples-label">Try a sample question:</span>
+          <div className="samples-list">
+            {SAMPLE_QUESTIONS.map((q) => (
+              <button
+                key={q}
+                type="button"
+                className="sample-chip"
+                disabled={pending}
+                onClick={() => ask(q)}
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit}>
         <input
           value={question}

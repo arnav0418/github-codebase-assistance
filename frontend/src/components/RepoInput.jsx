@@ -3,24 +3,24 @@ import { ingestRepo } from "../api.js";
 
 const SAMPLE_REPOS = [
   {
-    label: "flask",
-    url: "https://github.com/pallets/flask",
-    description: "Lightweight WSGI web framework",
+    label: "records",
+    url: "https://github.com/kennethreitz/records",
+    description: "SQL for Humans — tiny query library (~9 files)",
   },
   {
-    label: "requests",
-    url: "https://github.com/psf/requests",
-    description: "Elegant HTTP library for Python",
+    label: "colorama",
+    url: "https://github.com/tartley/colorama",
+    description: "Cross-platform colored terminal text (~23 files)",
   },
   {
-    label: "click",
-    url: "https://github.com/pallets/click",
-    description: "Composable command line interface toolkit",
+    label: "humanize",
+    url: "https://github.com/python-humanize/humanize",
+    description: "Human-readable numbers, dates, sizes (~13 files)",
   },
   {
-    label: "httpie",
-    url: "https://github.com/httpie/cli",
-    description: "Modern command-line HTTP client",
+    label: "tenacity",
+    url: "https://github.com/jd/tenacity",
+    description: "Retrying library for Python (~20 files)",
   },
 ];
 
