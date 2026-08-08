@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: codebase-assist-api
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: LLM_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false          # set this in the Render dashboard
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: EMBEDDING_MODEL
+        value: all-MiniLM-L6-v2
+      - key: CHROMA_DIR
+        value: /tmp/chroma_data
+      - key: CLONE_DIR
+        value: /tmp/repo_cache
+      - key: TOP_K
+        value: "8"
+      - key: CORS_ORIGINS
+        sync: false          # set to your Vercel origin
