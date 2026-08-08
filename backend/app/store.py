@@ -1,11 +1,16 @@
 """Embeddings (sentence-transformers) + vector store (Chroma, on-disk)."""
 
+import os
 from functools import lru_cache
 
-import chromadb
+# Must be set before chromadb is imported — it reads this at import time.
+os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
 
-from app import config
-from app.chunker import Chunk
+import chromadb  # noqa: E402
+from chromadb.config import Settings  # noqa: E402
+
+from app import config  # noqa: E402
+from app.chunker import Chunk  # noqa: E402
 
 # Cap what we hand the embedder per chunk. MiniLM truncates at 256 word pieces
 # anyway; this just keeps a pathological chunk from blowing up memory.
@@ -25,7 +30,11 @@ def get_embedder():
 
 @lru_cache(maxsize=1)
 def _client():
-    return chromadb.PersistentClient(path=config.CHROMA_DIR)
+    return chromadb.PersistentClient(
+        path=config.CHROMA_DIR,
+        # Chroma's telemetry is noisy and errors against some posthog versions.
+        settings=Settings(anonymized_telemetry=False),
+    )
 
 
 def get_collection():

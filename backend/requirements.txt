@@ -12,6 +12,9 @@ sentence-transformers==3.3.1
 
 # Vector store (embedded, on-disk)
 chromadb==0.5.23
+# chromadb declares only posthog>=2.4.0; posthog 4+ changed capture()'s signature,
+# which makes Chroma log a telemetry error on every call. Pin below it.
+posthog<4
 
 # Gemini provider
 google-genai==0.3.0
