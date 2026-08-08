@@ -116,6 +116,7 @@ def search(question: str, top_k: int) -> list[dict]:
     return [
         {"code": doc, "distance": dist, **meta}
         for doc, meta, dist in zip(documents, metadatas, distances)
+        if dist <= config.MAX_DISTANCE
     ]
 
 

@@ -22,6 +22,9 @@ CHROMA_COLLECTION = os.getenv("CHROMA_COLLECTION", "code_chunks")
 
 # --- Retrieval ---
 TOP_K = int(os.getenv("TOP_K", "8"))
+# Cosine distance (1 - similarity) above which a hit is considered irrelevant
+# and dropped, so off-topic questions don't drag in unrelated citations.
+MAX_DISTANCE = float(os.getenv("MAX_DISTANCE", "0.5"))
 
 # --- Ingest ---
 CLONE_DIR = os.getenv("CLONE_DIR", "./repo_cache")

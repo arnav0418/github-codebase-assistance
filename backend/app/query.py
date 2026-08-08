@@ -41,7 +41,8 @@ def answer_question(question: str, top_k: int) -> tuple[str, list[Citation]]:
     hits = store.search(question, top_k)
     if not hits:
         return (
-            "No code has been indexed yet. Ingest a repository first, then ask again.",
+            "No relevant code was found for that question. Make sure you've "
+            "ingested a repository, and try rephrasing if you have.",
             [],
         )
 
