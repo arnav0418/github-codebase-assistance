@@ -50,6 +50,36 @@ button {
   background: #f0f0f0;
 }
 
+.message p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.message.error {
+  border-color: #e5b4b4;
+  color: #a12727;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: #777;
+}
+
+.status {
+  font-size: 0.85rem;
+  color: #2c6e3f;
+}
+
+.error {
+  font-size: 0.85rem;
+  color: #a12727;
+}
+
 .citations {
   margin: 0.5rem 0 0;
   padding-left: 1.25rem;
