@@ -87,17 +87,18 @@ def chunk_python_file(file_path: str, source: str) -> list[Chunk]:
         covered.update(range(start, end + 1))
 
     # Top-level code outside any def: imports, constants, `if __name__` blocks.
+    # Emitted as contiguous runs so each chunk's line span is honest — a single
+    # merged chunk would claim a range that is mostly other chunks' code.
     leftover = [i for i in range(len(lines)) if i not in covered and lines[i].strip()]
-    if leftover:
+    for run in _contiguous_runs(leftover):
         chunks.append(
             Chunk(
                 file_path=file_path,
                 name="<module>",
                 kind="module",
-                start_line=leftover[0] + 1,
-                end_line=leftover[-1] + 1,
-                # Only the uncovered lines — skips the def bodies in between.
-                code="\n".join(lines[i] for i in leftover),
+                start_line=run[0] + 1,
+                end_line=run[-1] + 1,
+                code="\n".join(lines[i] for i in run),
             )
         )
 
@@ -106,6 +107,24 @@ def chunk_python_file(file_path: str, source: str) -> list[Chunk]:
 
     chunks.sort(key=lambda c: c.start_line)
     return chunks
+
+
+def _contiguous_runs(indices: list[int], max_gap: int = 2) -> list[list[int]]:
+    """Group sorted line indices into runs, tolerating small gaps.
+
+    `max_gap` keeps blank lines and short comment breaks between imports from
+    fragmenting them into one chunk per line.
+    """
+    if not indices:
+        return []
+
+    runs = [[indices[0]]]
+    for index in indices[1:]:
+        if index - runs[-1][-1] <= max_gap:
+            runs[-1].append(index)
+        else:
+            runs.append([index])
+    return runs
 
 
 def _whole_file(file_path: str, source: str, line_count: int) -> Chunk:
