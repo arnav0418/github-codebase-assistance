@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+chroma_data/
+repo_cache/
+.hf_cache/
+
+node_modules/
+dist/
+.vercel/
