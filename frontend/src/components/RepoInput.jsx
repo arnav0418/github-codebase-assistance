@@ -17,11 +17,6 @@ const SAMPLE_REPOS = [
     url: "https://github.com/python-humanize/humanize",
     description: "Human-readable numbers, dates, sizes (~13 files)",
   },
-  {
-    label: "tenacity",
-    url: "https://github.com/jd/tenacity",
-    description: "Retrying library for Python (~20 files)",
-  },
 ];
 
 const SELF_REPO = "https://github.com/arnav0418/github-codebase-assistance";
