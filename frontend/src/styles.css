@@ -150,3 +150,24 @@ button:disabled {
   font-size: 0.85rem;
   color: #555;
 }
+
+.message-content {
+  line-height: 1.6;
+}
+
+.response-section {
+  margin: 0.75rem 0 0.5rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid #ddd;
+  font-weight: 500;
+}
+
+.response-bullet {
+  margin: 0.4rem 0 0.4rem 1.25rem;
+  list-style: disc;
+}
+
+.response-text {
+  margin: 0.4rem 0;
+  color: #444;
+}

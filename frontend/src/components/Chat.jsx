@@ -9,6 +9,57 @@ const SAMPLE_QUESTIONS = [
   "explain a key function in this codebase.",
 ];
 
+function formatResponse(text) {
+  const lines = text.split("\n");
+  const elements = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+
+    if (!line.trim()) {
+      i++;
+      continue;
+    }
+
+    if (line.startsWith("* **")) {
+      const bulletMatch = line.match(/^\* \*\*([^*]+)\*\*: (.+)$/);
+      if (bulletMatch) {
+        elements.push(
+          <div key={`bullet-${i}`} className="response-bullet">
+            <strong>{bulletMatch[1]}:</strong> {bulletMatch[2]}
+          </div>
+        );
+      } else {
+        elements.push(
+          <div key={`bullet-${i}`} className="response-bullet">
+            {line.replace(/^\* /, "")}
+          </div>
+        );
+      }
+    } else if (line.startsWith("**") && line.includes("**:")) {
+      const headerMatch = line.match(/^\*\*([^*]+)\*\*:?\s*(.*)$/);
+      if (headerMatch) {
+        elements.push(
+          <div key={`header-${i}`} className="response-section">
+            <strong>{headerMatch[1]}:</strong> {headerMatch[2]}
+          </div>
+        );
+      }
+    } else {
+      elements.push(
+        <div key={`text-${i}`} className="response-text">
+          {line}
+        </div>
+      );
+    }
+
+    i++;
+  }
+
+  return elements.length > 0 ? elements : <p>{text}</p>;
+};
+
 export default function Chat({ repo }) {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
@@ -47,7 +98,9 @@ export default function Chat({ repo }) {
       <div className="messages">
         {messages.map((m, i) => (
           <div key={i} className={`message ${m.role}`}>
-            <p>{m.text}</p>
+            <div className="message-content">
+              {m.role === "assistant" ? formatResponse(m.text) : <p>{m.text}</p>}
+            </div>
             {m.citations?.length > 0 && <Citations items={m.citations} repo={repo} />}
           </div>
         ))}
