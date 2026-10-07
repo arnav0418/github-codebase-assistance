@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { askQuestion } from "../api.js";
 import Citations from "./Citations.jsx";
 
@@ -13,6 +13,10 @@ export default function Chat({ repo }) {
   const [messages, setMessages] = useState([]);
   const [question, setQuestion] = useState("");
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    setMessages([]);
+  }, [repo]);
 
   async function ask(text) {
     if (!text.trim() || pending) return;
