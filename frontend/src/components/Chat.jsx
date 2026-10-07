@@ -2,7 +2,36 @@ import { useState, useEffect } from "react";
 import { askQuestion } from "../api.js";
 import Citations from "./Citations.jsx";
 
-const SAMPLE_QUESTIONS = [
+// Phrased around real file/symbol names: chunks are embedded with their path and
+// symbol name, so these stay well inside the retrieval distance threshold.
+const SAMPLE_QUESTIONS_BY_REPO = {
+  "kennethreitz/records": [
+    "How does the Database class in records.py run a query?",
+    "What is the difference between Record and RecordCollection?",
+    "How do first(), one() and scalar() work on a RecordCollection?",
+    "How does Record.export() convert rows to other formats?",
+  ],
+  "tartley/colorama": [
+    "What does init() in initialise.py do?",
+    "How does AnsiToWin32 convert ANSI escape codes into Windows console calls?",
+    "How are AnsiFore, AnsiBack and AnsiStyle defined in ansi.py?",
+    "How does StreamWrapper wrap stdout and stderr?",
+  ],
+  "python-humanize/humanize": [
+    "How does naturalsize in filesize.py format file sizes?",
+    "How does naturaltime compute a relative time like '3 hours ago'?",
+    "How does intcomma add thousands separators to a number?",
+    "How does i18n.activate switch the translation locale?",
+  ],
+  "arnav0418/github-codebase-assistance": [
+    "How does chunk_python_file split a source file into chunks?",
+    "How does search() in store.py query Chroma and filter by MAX_DISTANCE?",
+    "How does build_prompt in query.py assemble the prompt from retrieved hits?",
+    "How does the ingest endpoint in main.py clone, chunk and index a repo?",
+  ],
+};
+
+const DEFAULT_SAMPLE_QUESTIONS = [
   "what does this module implement?",
   "what are the main classes and functions defined here?",
   "what imports and dependencies does this code use?",
@@ -125,7 +154,7 @@ export default function Chat({ repo }) {
         <div className="samples">
           <span className="samples-label">Try a sample question:</span>
           <div className="samples-list">
-            {SAMPLE_QUESTIONS.map((q) => (
+            {(SAMPLE_QUESTIONS_BY_REPO[repo] ?? DEFAULT_SAMPLE_QUESTIONS).map((q) => (
               <button
                 key={q}
                 type="button"
