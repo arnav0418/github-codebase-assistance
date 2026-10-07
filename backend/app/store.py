@@ -17,7 +17,8 @@ from app.chunker import Chunk  # noqa: E402
 MAX_CHARS = 8000
 
 # Small batches keep peak RSS down on a 512MB dyno.
-BATCH_SIZE = 32
+# Reduced from 32 to 16 to stay well under 450MB hard limit during ingest.
+BATCH_SIZE = 16
 
 
 @lru_cache(maxsize=1)

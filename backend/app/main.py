@@ -1,5 +1,6 @@
 """FastAPI app: /ingest and /query."""
 
+import gc
 import logging
 
 from fastapi import FastAPI, HTTPException
@@ -29,7 +30,7 @@ def health() -> dict:
 
 @app.post("/ingest", response_model=IngestResponse)
 def ingest(req: IngestRequest) -> IngestResponse:
-    """Clone -> walk .py files -> chunk -> embed -> store."""
+    """Clone -> walk .py files -> chunk -> embed -> store (streaming to cap memory)."""
     try:
         slug, checkout = ingest_mod.clone_repo(req.repo_url, config.CLONE_DIR)
     except ValueError as exc:
@@ -39,11 +40,15 @@ def ingest(req: IngestRequest) -> IngestResponse:
 
     # v1 indexes one repo at a time, so a new ingest replaces the old index.
     store.reset_collection()
+    # Force garbage collection to free old HNSW index before building new one.
+    gc.collect()
 
     files_indexed = 0
     chunks_indexed = 0
 
-    for relative_path, absolute_path in ingest_mod.iter_python_files(checkout):
+    for file_index, (relative_path, absolute_path) in enumerate(
+        ingest_mod.iter_python_files(checkout)
+    ):
         try:
             with open(absolute_path, encoding="utf-8", errors="replace") as handle:
                 source = handle.read()
@@ -52,15 +57,29 @@ def ingest(req: IngestRequest) -> IngestResponse:
 
         chunks = chunk_python_file(relative_path, source)
         if not chunks:
+            del source, chunks
             continue
 
         files_indexed += 1
-        chunks_indexed += store.index_chunks(slug, chunks)
+        # Stream chunks one at a time to avoid holding all chunks in memory.
+        # This keeps peak memory per file constant rather than linear in file count.
+        for chunk in chunks:
+            chunks_indexed += store.index_chunks(slug, [chunk])
+            del chunk
+
+        # Free source and chunk list before next file.
+        del source, chunks
+
+        # Garbage collect after each file to keep memory usage flat.
+        gc.collect()
 
     if chunks_indexed == 0:
         raise HTTPException(
             status_code=422, detail=f"No Python files found in {slug}"
         )
+
+    # Final garbage collection to restore clean state.
+    gc.collect()
 
     logger.info("indexed %s: %d files, %d chunks", slug, files_indexed, chunks_indexed)
     return IngestResponse(
