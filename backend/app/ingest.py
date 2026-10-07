@@ -35,6 +35,15 @@ def clone_repo(repo_url: str, dest_dir: str) -> tuple[str, str]:
     slug = parse_repo_slug(repo_url)
     checkout = os.path.join(dest_dir, slug.replace("/", "__"))
 
+    # Clean up old clones to prevent disk fill-up. Only keep the current one.
+    try:
+        for old_dir in os.listdir(dest_dir):
+            old_path = os.path.join(dest_dir, old_dir)
+            if old_path != checkout and os.path.isdir(old_path):
+                shutil.rmtree(old_path, ignore_errors=True)
+    except OSError:
+        pass
+
     # Always re-clone: cheaper to redo a depth-1 clone than to reconcile a stale one.
     if os.path.exists(checkout):
         shutil.rmtree(checkout, ignore_errors=True)
